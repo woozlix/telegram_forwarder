@@ -9,11 +9,20 @@ from telegram.ext import (
     ConversationHandler
 )
 from config import logger, get_config
-import db  # Импорт нашего модуля для работы с БД
+import db
 
-# Состояния для ConversationHandler
 SOURCE, DESTINATION = range(2)
 
+MSG_HELP_ID_SOURCE = """
+<b>Перешлите сообщение</b> из канала источника (откуда пересылать сообщения) или <b>введите ID группы источника</b> (пример: -1002719997220).\n
+Взять ID группы можно в версии Telegram Web в адресной строке.
+Например, если группа https://web.telegram.org/k/#-2844913382, то после знака '-' добавляем 100, получится: -1002844913382.
+"""
+MSG_HELP_ID_DESTINATION = """
+<b>Перешлите сообщение</b> из канала назначения (куда пересылать сообщения) или <b>введите ID группы назначения</b> (пример: -1002719997220).\n
+Взять ID группы можно в версии Telegram Web в адресной строке.
+Например, если группа https://web.telegram.org/k/#-2844913382, то после знака '-' добавляем 100, получится: -1002844913382.
+"""
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if update.effective_user.id not in whitelist_ids:
@@ -35,7 +44,9 @@ async def add_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
         return ConversationHandler.END
 
     await update.message.reply_text(
-        "Перешлите сообщение из канала источника (откуда пересылать) или введите ID группы источника (пример: -1002719997220)"
+        MSG_HELP_ID_SOURCE,
+        parse_mode='HTML',
+        disable_web_page_preview=True
     )
     return SOURCE
 
@@ -43,13 +54,14 @@ async def add_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
 async def source_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     if update.message.forward_from_chat:
         context.user_data['source_id'] = str(update.message.forward_from_chat.id)
-        await update.message.reply_text("Теперь перешлите сообщение из НАЗНАЧЕНИЯ (или отправьте ID группы):")
+        await update.message.reply_text(MSG_HELP_ID_DESTINATION,
+        disable_web_page_preview=True)
         return DESTINATION
 
-    # Если текст начинается с -100, считаем его ID
     if update.message.text and update.message.text.startswith("-100"):
         context.user_data['source_id'] = update.message.text.strip()
-        await update.message.reply_text("Теперь перешлите сообщение из НАЗНАЧЕНИЯ (или отправьте ID группы):")
+        await update.message.reply_text(MSG_HELP_ID_DESTINATION,
+        disable_web_page_preview=True)
         return DESTINATION
 
     await update.message.reply_text(
@@ -76,7 +88,7 @@ async def destination_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     try:
         await db.add_subscription(source_id, destination_id, user_id)
         await update.message.reply_text(
-            f"✅ Подписка добавлена!\n"
+            f"✅ Подписка добавлена!\n\n"
             f"Источник: {source_id}\n"
             f"Назначение: {destination_id}"
         )
@@ -118,7 +130,6 @@ async def remove_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if update.effective_user.id not in whitelist_ids:
         return
 
-    # Проверяем наличие аргумента (ID подписки)
     if not context.args:
         await update.message.reply_text("Пожалуйста, укажите ID подписки для удаления.\nПример: /remove 5")
         return
@@ -127,7 +138,6 @@ async def remove_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         sub_id = int(context.args[0])
         user_id = str(update.effective_user.id)
 
-        # Удаляем подписку
         deleted = await db.delete_subscription_by_user(sub_id, user_id)
 
         if deleted:
@@ -150,9 +160,6 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """
-    Обработчик входящих сообщений из чатов
-    """
     message = update.effective_message
     source = update.effective_chat
 
@@ -161,7 +168,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     chat_id = str(message.chat.id)
 
     try:
-        # Получаем все подписки для этого источника
         subscriptions = await db.get_subscriptions_by_source(chat_id)
 
         if not subscriptions:
@@ -169,7 +175,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
         logger.info(f"Получено сообщение из {chat_id}: {message}")
 
-        # Для каждой подписки пересылаем сообщение
         for subscription in subscriptions:
             try:
                 await message.forward(
@@ -180,7 +185,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             except Exception as e:
                 logger.error(f"Ошибка при пересылке в {subscription['destination_id']}: {e}")
                 try:
-                    # Пытаемся скопировать сообщение, если пересылка не удалась
                     await context.bot.copy_message(
                         chat_id=subscription["destination_id"],
                         from_chat_id=message.chat_id,
@@ -195,13 +199,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         logger.error(f"Ошибка обработки сообщения: {e}")
 
 
-# Инициализация и запуск бота
 logger.info("Bot started")
 config_dict = get_config()
 bot_token = config_dict['bot_token']
 whitelist_ids = config_dict['whitelist_ids']
 
-# Создаем обработчик диалогов
 conv_handler = ConversationHandler(
     entry_points=[CommandHandler('add', add_command)],
     states={
@@ -223,13 +225,11 @@ conv_handler = ConversationHandler(
 
 app = ApplicationBuilder().token(bot_token).build()
 
-# Регистрируем обработчики
 app.add_handler(CommandHandler("start", start))
 app.add_handler(CommandHandler("list", list_command))
 app.add_handler(CommandHandler("remove", remove_command))
 app.add_handler(conv_handler)
 
-# Обработчик сообщений из групп/каналов
 app.add_handler(MessageHandler(
     filters.ChatType.CHANNEL | filters.ChatType.GROUP | filters.ChatType.SUPERGROUP
     & ~filters.COMMAND
