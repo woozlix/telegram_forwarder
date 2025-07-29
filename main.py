@@ -58,12 +58,14 @@ async def source_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     if update.message.forward_from_chat:
         context.user_data['source_id'] = str(update.message.forward_from_chat.id)
         await update.message.reply_text(MSG_HELP_ID_DESTINATION,
+        parse_mode='HTML',
         disable_web_page_preview=True)
         return DESTINATION
 
     if update.message.text and update.message.text.startswith("-100"):
         context.user_data['source_id'] = update.message.text.strip()
         await update.message.reply_text(MSG_HELP_ID_DESTINATION,
+        parse_mode='HTML',
         disable_web_page_preview=True)
         return DESTINATION
 

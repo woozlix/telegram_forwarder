@@ -82,16 +82,16 @@ async def delete_subscription_by_user(sub_id: int, user_id: str) -> bool:
 async def main():
     await init_db()
 
-    # Тестовые данные
-    await add_subscription("source_123", "dest_456", "user_789")
-    print("Подписка добавлена")
-
-    subs = await get_subscriptions()
-    print("Все подписки:", subs)
-
-    if subs:
-        deleted = await delete_subscription_by_user(subs[0]['id'], "user_789")
-        print(f"Удаление подписки: {'Успешно' if deleted else 'Не удалось'}")
+    # # Тестовые данные
+    # await add_subscription("source_123", "dest_456", "user_789")
+    # print("Подписка добавлена")
+    #
+    # subs = await get_subscriptions()
+    # print("Все подписки:", subs)
+    #
+    # if subs:
+    #     deleted = await delete_subscription_by_user(subs[0]['id'], "user_789")
+    #     print(f"Удаление подписки: {'Успешно' if deleted else 'Не удалось'}")
 
 
 if __name__ == "__main__":
