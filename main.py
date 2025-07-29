@@ -20,11 +20,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
     await update.message.reply_text(
         f'Привет {update.effective_user.first_name}!\n\n'
-        f'Доступные команды:\n'
+        f'Чтобы бот мог пересылать сообщения, он должен быть админом в группе/канале источника и в группе/канале назначения.\n\n'
+        f'Доступные команды:\n\n'
         f'/start - информация о боте\n'
         f'/add - добавить пересылку сообщений\n'
         f'/list - показать ваши подписки\n'
         f'/remove - удалить подписку'
+        f'/cancel - отменить действие'
     )
 
 
@@ -33,42 +35,45 @@ async def add_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
         return ConversationHandler.END
 
     await update.message.reply_text(
-        "Перешлите сообщение из ИСТОЧНИКА (откуда пересылать):"
+        "Перешлите сообщение из канала источника (откуда пересылать) или введите ID группы источника (пример: -1002719997220)"
     )
     return SOURCE
 
 
 async def source_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    # Проверяем, что сообщение действительно переслано из чата
-    if not update.message.forward_from_chat:
-        await update.message.reply_text(
-            "Это не пересланное сообщение из чата. Пожалуйста, перешлите сообщение из группы/канала."
-        )
-        return SOURCE
+    if update.message.forward_from_chat:
+        context.user_data['source_id'] = str(update.message.forward_from_chat.id)
+        await update.message.reply_text("Теперь перешлите сообщение из НАЗНАЧЕНИЯ (или отправьте ID группы):")
+        return DESTINATION
 
-    # Сохраняем ID источника
-    context.user_data['source_id'] = str(update.message.forward_from_chat.id)
+    # Если текст начинается с -100, считаем его ID
+    if update.message.text and update.message.text.startswith("-100"):
+        context.user_data['source_id'] = update.message.text.strip()
+        await update.message.reply_text("Теперь перешлите сообщение из НАЗНАЧЕНИЯ (или отправьте ID группы):")
+        return DESTINATION
 
     await update.message.reply_text(
-        "Теперь перешлите сообщение из НАЗНАЧЕНИЯ (куда пересылать):"
+        "Это не пересланное сообщение из чата и не ID группы. Пожалуйста, перешлите сообщение или отправьте ID вида -100XXXXXXXXX."
     )
-    return DESTINATION
+    return SOURCE
+
 
 
 async def destination_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    if not update.message.forward_from_chat:
+    if update.message.forward_from_chat:
+        destination_id = str(update.message.forward_from_chat.id)
+    elif update.message.text and update.message.text.startswith("-100"):
+        destination_id = update.message.text.strip()
+    else:
         await update.message.reply_text(
-            "Это не пересланное сообщение из чата. Пожалуйста, перешлите сообщение из группы/канала."
+            "Это не пересланное сообщение из чата и не ID группы. Пожалуйста, перешлите сообщение или отправьте ID вида -100XXXXXXXXX."
         )
         return DESTINATION
 
-    # Получаем сохраненные данные
     source_id = context.user_data['source_id']
-    destination_id = str(update.message.forward_from_chat.id)
     user_id = str(update.effective_user.id)
 
     try:
-        # Сохраняем подписку в БД
         await db.add_subscription(source_id, destination_id, user_id)
         await update.message.reply_text(
             f"✅ Подписка добавлена!\n"
@@ -79,9 +84,9 @@ async def destination_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         logger.error(f"Ошибка при добавлении подписки: {e}")
         await update.message.reply_text("❌ Ошибка при добавлении подписки. Попробуйте позже.")
 
-    # Очищаем временные данные
     context.user_data.clear()
     return ConversationHandler.END
+
 
 
 async def list_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -144,48 +149,6 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     return ConversationHandler.END
 
 
-async def handle_channel_post(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """
-    Обработчик сообщений из каналов
-    """
-    channel_post = update.channel_post
-    if not channel_post:
-        return
-
-    chat_id = str(channel_post.chat.id)
-
-    try:
-        subscriptions = await db.get_subscriptions(chat_id)
-
-        if not subscriptions:
-            return
-
-        logger.info(f"Получен пост из канала {chat_id} для {len(subscriptions)} подписок")
-
-        for subscription in subscriptions:
-            try:
-                await channel_post.forward(
-                    chat_id=subscription["destination_id"],
-                    message_thread_id=channel_post.message_thread_id
-                )
-                logger.debug(f"Пост переслан в {subscription['destination_id']}")
-            except Exception as e:
-                logger.error(f"Ошибка при пересылке поста в {subscription['destination_id']}: {e}")
-                try:
-                    await context.bot.copy_message(
-                        chat_id=subscription["destination_id"],
-                        from_chat_id=channel_post.chat_id,
-                        message_id=channel_post.message_id,
-                        message_thread_id=channel_post.message_thread_id
-                    )
-                    logger.debug(f"Пост скопирован в {subscription['destination_id']}")
-                except Exception as copy_error:
-                    logger.error(f"Ошибка при копировании поста: {copy_error}")
-
-    except Exception as e:
-        logger.error(f"Ошибка обработки поста из канала: {e}")
-
-
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
     Обработчик входящих сообщений из чатов
@@ -244,13 +207,13 @@ conv_handler = ConversationHandler(
     states={
         SOURCE: [
             MessageHandler(
-                filters.FORWARDED & filters.ChatType.PRIVATE,
+                filters.FORWARDED | filters.TEXT,
                 source_step
             )
         ],
         DESTINATION: [
             MessageHandler(
-                filters.FORWARDED & filters.ChatType.PRIVATE,
+                filters.FORWARDED | filters.TEXT,
                 destination_step
             )
         ],
