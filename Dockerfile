@@ -18,5 +18,5 @@ COPY config.json .
 
 RUN touch /app/logs/bot.log
 
-CMD ["python", "db.py"]
+RUN python db.py
 CMD ["python", "main.py"]
