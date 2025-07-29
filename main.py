@@ -26,6 +26,9 @@ MSG_HELP_ID_DESTINATION = """
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if update.effective_user.id not in whitelist_ids:
+        await update.message.reply_text(
+        f'Привет {update.effective_user.first_name}!\n\n'
+        f'Твой ID - {update.effective_user.id}. Чтобы можно было использовать бота, сначала нужно добавить этот ID в вайтлист. Свяжитесь с администратором.')
         return
     await update.message.reply_text(
         f'Привет {update.effective_user.first_name}!\n\n'
