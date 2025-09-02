@@ -171,6 +171,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     logger.info(f"Received message from chat: {source.id} (type: {source.type})")
 
     chat_id = str(message.chat.id)
+    thread_id = message.message_thread_id
+    if thread_id:
+        chat_id = f'{chat_id}#{thread_id}'
 
     try:
         subscriptions = await db.get_subscriptions_by_source(chat_id)
@@ -181,14 +184,21 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         logger.info(f"Получено сообщение из {chat_id}: {message}")
 
         for subscription in subscriptions:
+            dest = subscription["destination_id"]
+            if '#' in dest:
+                dest_chat_id, dest_thread_id = dest.split('#', 1)
+                dest_thread_id = int(dest_thread_id)
+            else:
+                dest_chat_id = dest
+                dest_thread_id = None
             try:
                 await message.forward(
-                    chat_id=subscription["destination_id"],
-                    message_thread_id=message.message_thread_id
+                    chat_id=dest_chat_id,
+                    message_thread_id=dest_thread_id
                 )
-                logger.debug(f"Сообщение переслано в {subscription['destination_id']}")
+                logger.debug(f"Сообщение переслано в {subscription['destination_id']} (topic {dest_thread_id})")
             except Exception as e:
-                logger.error(f"Ошибка при пересылке в {subscription['destination_id']}: {e}")
+                logger.error(f"Ошибка при пересылке в {subscription['destination_id']} (topic {dest_thread_id}): {e}")
                 try:
                     await context.bot.copy_message(
                         chat_id=subscription["destination_id"],
