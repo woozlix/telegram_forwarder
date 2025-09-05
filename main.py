@@ -172,7 +172,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     chat_id = str(message.chat.id)
     if not chat_id.startswith('-100'):
-        chat_id = f'-100{chat_id}'
+        chat_id = f'-100{chat_id[1:]}'
     thread_id = message.message_thread_id
     if thread_id:
         chat_id = f'{chat_id}#{thread_id}'

@@ -32,15 +32,11 @@ async def add_subscription(source_id: str, destination_id: str, user_id_created:
 
 
 async def get_subscriptions_by_source(source_id: str = None):
-    """Получение подписок с возможностью фильтрации по пользователю"""
     async with aiosqlite.connect(DB_PATH) as db:
-        if source_id:
-            cursor = await db.execute(
-                "SELECT * FROM subscriptions WHERE source_id = ?",
-                (source_id,)
-            )
-        else:
-            cursor = await db.execute("SELECT * FROM subscriptions")
+        cursor = await db.execute(
+            "SELECT * FROM subscriptions WHERE source_id = ?",
+            (source_id,)
+        )
 
         # Получаем данные с именами колонок
         columns = [col[0] for col in cursor.description]
