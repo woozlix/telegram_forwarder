@@ -245,13 +245,20 @@ app.add_handler(CommandHandler("list", list_command))
 app.add_handler(CommandHandler("remove", remove_command))
 app.add_handler(conv_handler)
 
-app.add_handler(MessageHandler(
+handle_message_filter = (
     filters.ChatType.CHANNEL | filters.ChatType.GROUP | filters.ChatType.SUPERGROUP
     & ~filters.COMMAND
-    & ~filters.StatusUpdate.ALL,
-    handle_message
-))
+    & ~filters.StatusUpdate.ALL
+)
 
+async def log_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not handle_message_filter.check_update(update):
+        logger.info(f"Received message: {update.message.text} from {update.effective_chat.id}")
+
+
+app.add_handler(MessageHandler(handle_message_filter, handle_message), group=1)
+
+app.add_handler(MessageHandler(filters.ALL, log_message), group=2)
 
 app.run_polling(
     drop_pending_updates=True,
