@@ -1,8 +1,9 @@
 import aiosqlite
 import asyncio
 from datetime import datetime
+import os
 
-DB_PATH = "data/subscriptions.db"
+DB_PATH = os.path.join(os.path.dirname(__file__), "data", "subscriptions.db")
 
 
 async def init_db():

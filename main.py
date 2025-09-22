@@ -10,6 +10,7 @@ from telegram.ext import (
 )
 from config import logger, get_config
 import db
+from db import init_db
 
 SOURCE, DESTINATION = range(2)
 
@@ -23,6 +24,8 @@ MSG_HELP_ID_DESTINATION = """
 Взять ID группы можно в версии Telegram Web в адресной строке.
 Например, если группа https://web.telegram.org/k/#-2844913382, то после знака '-' добавляем 100, получится: -1002844913382.
 """
+
+whitelist_ids = get_config()['whitelist_ids']
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if update.effective_user.id not in whitelist_ids:
@@ -216,53 +219,67 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         logger.error(f"Ошибка обработки сообщения: {e}")
 
 
-logger.info("Bot started")
-config_dict = get_config()
-bot_token = config_dict['bot_token']
-whitelist_ids = config_dict['whitelist_ids']
+def main():
+    """Основная функция инициализации и запуска бота"""
+    logger.info("Bot starting initialization...")
 
-conv_handler = ConversationHandler(
-    entry_points=[CommandHandler('add', add_command)],
-    states={
-        SOURCE: [
-            MessageHandler(
-                filters.FORWARDED | filters.TEXT,
-                source_step
-            )
-        ],
-        DESTINATION: [
-            MessageHandler(
-                filters.FORWARDED | filters.TEXT,
-                destination_step
-            )
-        ],
-    },
-    fallbacks=[CommandHandler('cancel', cancel)],
-)
+    # Создаем приложение
+    app = ApplicationBuilder().token(get_config()['bot_token']).build()
 
-app = ApplicationBuilder().token(bot_token).build()
+    # Настраиваем обработчики
+    setup_handlers(app)
 
-app.add_handler(CommandHandler("start", start))
-app.add_handler(CommandHandler("list", list_command))
-app.add_handler(CommandHandler("remove", remove_command))
-app.add_handler(conv_handler)
+    # Запускаем бота
+    app.run_polling(
+        drop_pending_updates=True,
+        allowed_updates=["message", "channel_post", "edited_message"]
+    )
 
-handle_message_filter = (
-    filters.ChatType.CHANNEL | filters.ChatType.GROUP | filters.ChatType.SUPERGROUP
-    & ~filters.COMMAND
-    & ~filters.StatusUpdate.ALL
-)
+
+def setup_handlers(app):
+    """Настройка всех обработчиков команд и сообщений"""
+    conv_handler = ConversationHandler(
+        entry_points=[CommandHandler('add', add_command)],
+        states={
+            SOURCE: [
+                MessageHandler(
+                    filters.FORWARDED | filters.TEXT,
+                    source_step
+                )
+            ],
+            DESTINATION: [
+                MessageHandler(
+                    filters.FORWARDED | filters.TEXT,
+                    destination_step
+                )
+            ],
+        },
+        fallbacks=[CommandHandler('cancel', cancel)],
+    )
+
+    # Базовые команды
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("list", list_command))
+    app.add_handler(CommandHandler("remove", remove_command))
+    app.add_handler(conv_handler)
+
+    # Обработчик входящих сообщений
+    handle_message_filter = (
+            filters.ChatType.CHANNEL | filters.ChatType.GROUP | filters.ChatType.SUPERGROUP
+            & ~filters.COMMAND
+            & ~filters.StatusUpdate.ALL
+    )
+    # Обработка пересылаемых сообщений
+    app.add_handler(MessageHandler(handle_message_filter, handle_message), group=1)
+
+    # Логирование всех сообщений
+    app.add_handler(MessageHandler(filters.ALL, log_message), group=2)
+
 
 async def log_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not handle_message_filter.check_update(update):
+    if update.message and update.message.text:
         logger.info(f"Received message: {update.message.text} from {update.effective_chat.id}")
 
 
-app.add_handler(MessageHandler(handle_message_filter, handle_message), group=1)
-
-app.add_handler(MessageHandler(filters.ALL, log_message), group=2)
-
-app.run_polling(
-    drop_pending_updates=True,
-    allowed_updates=["message", "channel_post", "edited_message"]
-)
+if __name__ == '__main__':
+    main()
